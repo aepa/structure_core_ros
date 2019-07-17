@@ -37,6 +37,7 @@
 
 #include <Eigen/Geometry>
 #include <ST/CaptureSession.h>
+#include <vector>
 
 void register_convert(const ST::DepthFrame& depth_frame, const ST::ColorFrame& color_frame, std::vector<uint8_t>& output)
 {
@@ -53,17 +54,17 @@ void register_convert(const ST::DepthFrame& depth_frame, const ST::ColorFrame& c
   double rgb_Tx = 0.0, rgb_Ty = 0.0;
 
   Eigen::Matrix3d rot;
-  const ST::Matrix4 pose = depth_frame.visibleCameraPoseInDepthCoordinateFrame();
+  const ST::Matrix4 pose = depth_frame.colorCameraPoseInDepthCoordinateFrame();
   for(size_t j = 0; j < 4; j++)
   {
     for(size_t i = 0; i < 4; i++){
-      rot(j, i) = pose.atRowCol(j, i);
+      rot(j, i) = pose(j, i);
     }
   }
 
-  Eigen::Affine3d depth_to_rgb = Eigen::Translation3d(pose.atRowCol(0,3),
-                                                      pose.atRowCol(1,3),
-                                                      pose.atRowCol(2,3)) *
+  Eigen::Affine3d depth_to_rgb = Eigen::Translation3d(pose(0,3),
+                                                      pose(1,3),
+                                                      pose(2,3)) *
                                          Eigen::Quaterniond(rot);
 
   
