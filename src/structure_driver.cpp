@@ -10,6 +10,7 @@
 
 #include <sensor_msgs/Image.h>
 #include <sensor_msgs/CameraInfo.h>
+#include <sensor_msgs/Imu.h>
 #include <sensor_msgs/fill_image.h>
 
 class SessionDelegate : public ST::CaptureSessionDelegate {
@@ -35,6 +36,9 @@ class SessionDelegate : public ST::CaptureSessionDelegate {
         ros::Publisher left_info_pub_;
         ros::Publisher right_image_pub_;
         ros::Publisher right_info_pub_;
+
+        ros::Publisher imu_pub_;
+        sensor_msgs::Imu imu_msg_;
 
 
         sensor_msgs::ImagePtr imageFromDepthFrame(const std::string& frame_id, const ST::DepthFrame& f)
@@ -177,6 +181,29 @@ class SessionDelegate : public ST::CaptureSessionDelegate {
             return {left, right};
         }
 
+        void publishImuData(const ST::AccelerometerEvent ae)
+        {
+          if (imu_pub_.getNumSubscribers() == 0)
+          {
+            ;//return;
+          }
+          ST::Acceleration acc = ae.acceleration();
+          imu_msg_.header.stamp.fromSec(ae.timestamp());
+          imu_msg_.linear_acceleration.x = acc.x;
+          imu_msg_.linear_acceleration.y = acc.y;
+          imu_msg_.linear_acceleration.z = acc.z;
+          imu_pub_.publish(imu_msg_);
+        }
+
+        // setting angular velocity in imu message only without publishing
+        void setGyroValue(const ST::GyroscopeEvent ge)
+        {
+          ST::RotationRate rotr = ge.rotationRate();
+          imu_msg_.angular_velocity.x = rotr.x;
+          imu_msg_.angular_velocity.y = rotr.y;
+          imu_msg_.angular_velocity.z = rotr.z;
+        }
+
         void publishDepthFrame(const ST::DepthFrame& f)
         {
             if(not f.isValid() or depth_image_pub_.getNumSubscribers() == 0)
@@ -292,6 +319,12 @@ class SessionDelegate : public ST::CaptureSessionDelegate {
             ros::NodeHandle rn(n, "right");
             right_image_pub_ = rn.advertise<sensor_msgs::Image>("image_raw", 10);
             right_info_pub_ = rn.advertise<sensor_msgs::CameraInfo>("camera_info", 10);
+
+            ros::NodeHandle imun(n, "imu");
+            imu_pub_ = imun.advertise<sensor_msgs::Imu>("acceleration", 10);
+            imu_msg_.orientation_covariance[0] = -1;
+            imu_msg_.header.frame_id = "imu_frame";
+
         }
 
         void captureSessionEventDidOccur(ST::CaptureSession *, ST::CaptureSessionEventId event) override {
@@ -343,8 +376,10 @@ class SessionDelegate : public ST::CaptureSessionDelegate {
                     }
                     break;
                 case ST::CaptureSessionSample::Type::AccelerometerEvent:
+                    publishImuData(sample.accelerometerEvent);
                     break;
                 case ST::CaptureSessionSample::Type::GyroscopeEvent:
+                    setGyroValue(sample.gyroscopeEvent); 
                     break;
                 default:
                     printf("Sample type %d unhandled\n", (int)sample.type);
@@ -390,9 +425,9 @@ int main(int argc, char **argv) {
     /** @brief Set to true to enable visible streaming. */
     settings.structureCore.visibleEnabled = true;
     /** @brief Set to true to enable accelerometer streaming. */
-    settings.structureCore.accelerometerEnabled = false;
+    settings.structureCore.accelerometerEnabled = true;
     /** @brief Set to true to enable gyroscope streaming. */
-    settings.structureCore.gyroscopeEnabled = false;
+    settings.structureCore.gyroscopeEnabled = true;
     /** @brief The target resolution for streamed depth frames. @see StructureCoreDepthResolution */
     settings.structureCore.depthResolution = ST::StructureCoreDepthResolution::SXGA;
     /** @brief The preset depth range mode for streamed depth frames. Modifies the min/max range of the depth values. */
@@ -412,7 +447,7 @@ int main(int argc, char **argv) {
     /** @brief Specifies how to stream the infrared frames. @see StructureCoreInfraredMode */
     settings.structureCore.infraredMode = ST::StructureCoreInfraredMode::BothCameras;
     /** @brief The target stream rate for IMU data. (gyro and accel) */
-    settings.structureCore.imuUpdateRate = ST::StructureCoreIMUUpdateRate::Default;
+    settings.structureCore.imuUpdateRate = ST::StructureCoreIMUUpdateRate::AccelAndGyro_100Hz;
     /** @brief Serial number of sensor to stream. If null, the first connected sensor will be used. */
     settings.structureCore.sensorSerial = nullptr;
     /** @brief Maximum amount of time (in milliseconds) to wait for a sensor to connect before throwing a timeout error. */
@@ -436,7 +471,7 @@ int main(int argc, char **argv) {
     /** @brief Setting this to true will reduce latency, but might drop more frame */
     settings.structureCore.latencyReducerEnabled = false;
     /** @brief Laser projector power setting from 0.0 to 1.0 inclusive. Projector will only activate if required by streaming configuration. */
-    settings.structureCore.initialProjectorPower = 1.0f;
+    // settings.structureCore.initialProjectorPower = 1.0f;
 
     SessionDelegate delegate(n, pnh);
     ST::CaptureSession session;
